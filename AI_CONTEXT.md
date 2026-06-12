@@ -314,3 +314,141 @@ After calculating balances, we have a map of users to positive/negative values.
 2. **No Offline Support / PWA**: Web only. State is wiped on refresh (except Auth via token).
 3. **No Email Delivery**: Because automated emails require 3rd party services (SendGrid/Resend), users must manually coordinate to register before their friends can add them to a group by their exact email.
 4. **No Deep Supabase Auth**: We built our own JWT auth rather than using Supabase Auth. This means Supabase RLS cannot easily identify users natively, which is why we disabled RLS for chat messages.
+
+---
+
+## 9. Key Prompts Used During Development
+
+### Interview Round 1 — Product Goals
+Q: What is the goal of this project?
+A: Purely to demonstrate full-stack ability for the Spreetail internship.
+
+Q: Have you used Splitwise?
+A: Yes. Features used: groups, equal split expenses, balance tracking, settle up.
+   Features never used: recurring expenses, currency conversion, Splitwise Pro.
+
+Q: Who will evaluate this?
+A: Spreetail evaluators looking for: working deployed app, clean code, 
+   all minimum features, detailed AI_CONTEXT.md, ability to explain 
+   and modify the codebase in a technical interview.
+
+### Interview Round 2 — MVP Features
+- 4 split types confirmed: Equal, Exact, Percentage, Shares
+- Expense flow: any member can add, payer selectable, subset of group allowed
+- Realtime chat: per-expense comments only, WebSocket via Supabase Realtime
+- Member invite: by registered email only, no invite links
+- Settlements: manual recording only, partial settlements allowed
+
+### Interview Round 3 — Architecture & Data Model
+- Stack decided: React/Vite + Express + PostgreSQL/Supabase + Prisma + JWT
+- Balance approach: compute on the fly (Approach B+C), with debt simplification
+- Both group-scoped and overall dashboard balance views needed
+- Separate expense_splits table chosen over JSON column
+- Settlements as own table, not a special expense type
+
+### Interview Round 4 — UI & API Design
+- Pages: Login, Register, Dashboard, GroupDetail, ExpenseDetail (no separate pages for modals)
+- Dashboard: overall balance card + group cards grid
+- JWT: access token only, 7 days expiry, localStorage
+- Register fields: name, email, password only
+- RESTful API routes confirmed
+- State management: React Context + useReducer for auth only
+- Tailwind CSS v3, axios with interceptor
+
+### Interview Round 5 — Edge Cases & Schema
+- Supabase Realtime: anon key with RLS disabled (comments not sensitive)
+- expense_splits.amount stores owed share, not amount paid
+- All IDs: UUID via gen_random_uuid()
+- Expenses: create and delete only, no editing
+- Cascade delete: expense_splits and chat_messages delete with expense
+- Removed members: allow removal, keep historical expenses intact
+- Rounding: remainder assigned to first participant
+- No service layer, route + controller pattern only
+
+### Interview Round 6 — Final Details
+- Tailwind v3 confirmed
+- Folder structure: client/ and server/
+- Env vars finalized for both client and server
+- CORS: CLIENT_URL only, not wildcard
+- Render build: npm install && npx prisma generate
+- db push run manually from local, not on Render
+- Settle Up modal: pre-populated from simplified balances, editable for partial
+
+## 10. Changes Made During Implementation
+Document every deviation from the original plan:
+
+1. Prisma v7 compatibility: Prisma v7 removed the classic 
+   connection string approach. Had to install @prisma/adapter-pg 
+   and use prisma.config.ts instead of purely schema.prisma.
+
+2. Supabase connection pooler IPv6 issue: Transaction pooler 
+   (port 6543) uses IPv6 by default which is blocked on Indian 
+   ISP networks. Workaround: used Session pooler (port 5432) 
+   as DIRECT_URL for prisma db push. Runtime queries still use 
+   Transaction pooler on port 6543 which is IPv4 proxied.
+
+3. Direct connection port 5432 blocked: db.xxx.supabase.co:5432 
+   was unreachable (P1001 error). Confirmed ISP blocks direct 
+   PostgreSQL connections. Session pooler was the solution.
+
+4. Supabase API keys updated: Supabase introduced new 
+   "Publishable and secret" key format. Had to use 
+   "Legacy anon, service_role API keys" tab to get the 
+   classic anon key compatible with @supabase/supabase-js.
+
+5. Supabase Realtime configuration moved: The Realtime toggle 
+   is no longer under Database → Replication. Enabled via SQL:
+   ALTER PUBLICATION supabase_realtime ADD TABLE chat_messages;
+   ALTER TABLE chat_messages DISABLE ROW LEVEL SECURITY;
+
+6. UI overhaul added as unplanned phase: After all functionality 
+   was complete, a full UI improvement pass was done covering 
+   all pages and components to meet portfolio quality standard.
+
+## 11. Deployment Plan
+
+### Backend → Render.com
+- Service type: Web Service
+- Root directory: server/
+- Build command: npm install && npx prisma generate
+- Start command: node index.js
+- Environment variables to set:
+  DATABASE_URL = transaction pooler URL (port 6543)
+  DIRECT_URL = session pooler URL (port 5432)
+  JWT_SECRET = same value as local
+  PORT = (leave empty, Render sets this automatically)
+  CLIENT_URL = https://your-vercel-app.vercel.app
+
+### Frontend → Vercel
+- Root directory: client/
+- Build command: npm run build
+- Output directory: dist
+- Environment variables to set:
+  VITE_API_URL = https://your-render-app.onrender.com
+  VITE_SUPABASE_URL = https://fqlvhuirffxptvdjqbgz.supabase.co
+  VITE_SUPABASE_ANON_KEY = your anon key
+
+### Database → Supabase (already live)
+- Tables created via: npx prisma db push
+- Realtime enabled on chat_messages via SQL
+- RLS disabled on chat_messages via SQL
+- No further setup needed
+
+### Post-deployment steps:
+1. Deploy backend to Render first, copy the URL
+2. Set CLIENT_URL on Render to Vercel URL
+3. Set VITE_API_URL on Vercel to Render URL
+4. Redeploy frontend after setting env vars
+5. Run smoke test on deployed URLs
+
+## 12. Testing Plan
+Manual testing only (no automated tests — tradeoff due to time constraints).
+Full end-to-end test performed:
+- Registered two users in separate browsers
+- Created group, added second user by email
+- Tested all 4 split types with validation
+- Verified balance calculation correctness
+- Tested partial and full settlements
+- Verified realtime chat across two browser tabs
+- Tested expense deletion and balance recalculation
+- Verified responsive layout on mobile viewport
