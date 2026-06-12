@@ -4,6 +4,25 @@ import api from '../api/axios';
 import supabase from '../api/supabase';
 import { AuthContext } from '../context/AuthContext';
 
+const getAvatarColor = (name) => {
+  const colors = ['bg-red-100 text-red-600', 'bg-blue-100 text-blue-600', 'bg-green-100 text-green-600', 'bg-yellow-100 text-yellow-600', 'bg-purple-100 text-purple-600', 'bg-pink-100 text-pink-600', 'bg-indigo-100 text-indigo-600'];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
+};
+
+const getBadgeColor = (type) => {
+  switch(type) {
+    case 'EQUAL': return 'bg-green-100 text-green-800 border-green-200';
+    case 'EXACT': return 'bg-blue-100 text-blue-800 border-blue-200';
+    case 'PERCENTAGE': return 'bg-purple-100 text-purple-800 border-purple-200';
+    case 'SHARES': return 'bg-orange-100 text-orange-800 border-orange-200';
+    default: return 'bg-gray-100 text-gray-800 border-gray-200';
+  }
+};
+
 const ExpenseDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -13,7 +32,6 @@ const ExpenseDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Comments state
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
@@ -37,7 +55,6 @@ const ExpenseDetailPage = () => {
   useEffect(() => {
     fetchExpenseData();
 
-    // Subscribe to realtime updates for this expense's chat messages
     const channel = supabase
       .channel(`chat_messages:expense_id=eq.${id}`)
       .on(
@@ -50,17 +67,8 @@ const ExpenseDetailPage = () => {
         },
         async (payload) => {
           const newMsg = payload.new;
-          // If the message was sent by us, it might already be in the UI, 
-          // but we can just append it anyway (avoiding duplicates by checking IDs)
           setMessages((prev) => {
             if (prev.find((m) => m.id === newMsg.id)) return prev;
-            
-            // The payload.new doesn't include the joined 'user' relation automatically.
-            // We need to fetch the user details or provide a placeholder.
-            // A better way is to rely on our GET endpoint if needed, but since we want it instant:
-            // Let's assume we can push it with a placeholder name, or fetch just that message.
-            // Actually, we can fetch the user info from API or use a generic name if we can't get it.
-            // But wait, the backend `getMessages` endpoint already provides it. Let's just refetch messages.
             fetchExpenseData();
             return prev;
           });
@@ -71,11 +79,9 @@ const ExpenseDetailPage = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   useEffect(() => {
-    // Scroll to bottom when messages update
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
@@ -100,7 +106,6 @@ const ExpenseDetailPage = () => {
       const res = await api.post(`/expenses/${id}/messages`, { content: newMessage });
       const newMsgData = res.data.data.message;
       
-      // Optimistically append (Realtime subscription will handle deduping)
       setMessages(prev => {
         if (prev.find(m => m.id === newMsgData.id)) return prev;
         return [...prev, newMsgData];
@@ -116,17 +121,18 @@ const ExpenseDetailPage = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
+      <div className="flex-1 flex items-center justify-center min-h-[80vh]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
       </div>
     );
   }
 
   if (error || !expense) {
     return (
-      <div className="min-h-screen bg-gray-50 p-6 flex flex-col items-center">
-        <div className="text-red-500 mb-4">{error}</div>
-        <Link to="/dashboard" className="text-emerald-600 hover:underline">Back to Dashboard</Link>
+      <div className="max-w-5xl mx-auto px-4 py-8 text-center">
+        <div className="bg-red-50 text-red-600 p-4 rounded-xl inline-block mb-4">{error}</div>
+        <br />
+        <Link to="/dashboard" className="text-primary-600 font-semibold hover:underline">Back to Dashboard</Link>
       </div>
     );
   }
@@ -137,137 +143,164 @@ const ExpenseDetailPage = () => {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-12">
-      <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <Link to={`/groups/${expense.group_id}`} className="text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            <span className="text-sm font-medium">Back to Group</span>
-          </Link>
-          {isPayer && (
-            <button 
-              onClick={handleDelete}
-              className="text-sm text-red-500 hover:text-red-700 font-medium transition-colors"
-            >
-              Delete Expense
-            </button>
-          )}
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      
+      {/* Header */}
+      <div className="flex items-start gap-4 mb-8">
+        <Link to={`/groups/${expense.group_id}`} className="mt-1 w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-slate-500 hover:bg-gray-50 transition-colors shadow-sm shrink-0">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+        </Link>
+        <div>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{expense.description}</h1>
+          <p className="text-sm font-medium text-slate-500 mt-1">{dateStr}</p>
         </div>
-      </header>
+      </div>
 
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 space-y-8">
+      <div className="flex flex-col lg:flex-row gap-8">
         
-        {/* Expense Info */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 sm:p-8">
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-extrabold text-gray-900">{expense.description}</h1>
-              <p className="mt-2 text-lg text-gray-600">
-                Paid by <span className="font-bold text-gray-900">{isPayer ? 'You' : expense.paid_by.name}</span>
-              </p>
-              <p className="text-sm text-gray-400 mt-1">{dateStr}</p>
-            </div>
-            <div className="text-left sm:text-right">
-              <p className="text-4xl font-black text-gray-900">₹{Number(expense.amount).toFixed(2)}</p>
-              <div className="mt-2 inline-block px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full tracking-wide">
-                {expense.split_type} SPLIT
+        {/* Left Column: Summary & Splits (60%) */}
+        <div className="w-full lg:w-[60%] space-y-6">
+          
+          {/* Summary Card */}
+          <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+              <div className="flex items-center gap-4">
+                <div className={`w-14 h-14 rounded-full flex items-center justify-center font-bold text-xl ${getAvatarColor(expense.paid_by.name)}`}>
+                  {expense.paid_by.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-1">Paid by</p>
+                  <p className="text-xl font-bold text-slate-900">
+                    {isPayer ? 'You' : expense.paid_by.name}
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-left sm:text-right">
+                <p className="text-5xl font-black text-slate-900 tracking-tight mb-2">
+                  <span className="text-3xl text-slate-400 font-bold mr-1">₹</span>
+                  {Number(expense.amount).toFixed(2)}
+                </p>
+                <div className="flex items-center sm:justify-end gap-3">
+                  <span className={`px-3 py-1 text-xs font-bold rounded-full border ${getBadgeColor(expense.split_type)}`}>
+                    {expense.split_type}
+                  </span>
+                  {isPayer && (
+                    <button 
+                      onClick={handleDelete}
+                      className="px-3 py-1 text-xs font-bold rounded-full border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          </section>
 
-          <div className="mt-8 border-t border-gray-100 pt-6">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Split Breakdown</h3>
-            <div className="space-y-3">
+          {/* Split Breakdown */}
+          <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-6 py-5 border-b border-gray-100 bg-gray-50/50">
+              <h2 className="text-lg font-bold text-slate-800">Split Breakdown</h2>
+            </div>
+            <ul className="divide-y divide-gray-50">
               {expense.splits.map(split => {
                 const isMe = split.user.id === user.id;
                 return (
-                  <div 
+                  <li 
                     key={split.id} 
-                    className={`flex items-center justify-between p-3 rounded-lg border ${isMe ? 'bg-emerald-50 border-emerald-200' : 'bg-gray-50 border-gray-100'}`}
+                    className={`flex items-center justify-between p-5 transition-colors ${isMe ? 'bg-primary-50/50' : 'hover:bg-gray-50'}`}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${isMe ? 'bg-emerald-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
-                        {isMe ? 'Y' : split.user.name.charAt(0).toUpperCase()}
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${getAvatarColor(split.user.name)}`}>
+                        {split.user.name.charAt(0).toUpperCase()}
                       </div>
-                      <span className={`font-medium ${isMe ? 'text-emerald-900' : 'text-gray-900'}`}>
+                      <span className={`font-bold ${isMe ? 'text-primary-800' : 'text-slate-800'}`}>
                         {isMe ? 'You' : split.user.name}
                       </span>
                     </div>
-                    <span className={`font-bold ${isMe ? 'text-emerald-700' : 'text-gray-900'}`}>
+                    <span className={`font-bold text-lg ${isMe ? 'text-primary-600' : 'text-slate-900'}`}>
                       ₹{Number(split.amount).toFixed(2)}
                     </span>
-                  </div>
+                  </li>
                 );
               })}
-            </div>
-          </div>
+            </ul>
+          </section>
         </div>
 
-        {/* Comments Section */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-[500px]">
-          <div className="p-4 border-b border-gray-100">
-            <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
-              Comments
-            </h3>
-          </div>
-          
-          <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-gray-50">
-            {messages.length === 0 ? (
-              <p className="text-center text-gray-400 mt-4 text-sm">No comments yet. Be the first to comment!</p>
-            ) : (
-              messages.map(msg => {
-                const isMe = msg.user.id === user.id;
-                const time = new Date(msg.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-                return (
-                  <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                    <span className="text-xs text-gray-500 mb-1 ml-1 mr-1">
-                      {isMe ? 'You' : msg.user.name} • {time}
-                    </span>
-                    <div 
-                      className={`max-w-[75%] px-4 py-2 rounded-2xl ${
-                        isMe 
-                          ? 'bg-emerald-600 text-white rounded-tr-sm' 
-                          : 'bg-white border border-gray-200 text-gray-900 rounded-tl-sm shadow-sm'
-                      }`}
-                    >
-                      <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-
-          <div className="p-4 border-t border-gray-100 bg-white rounded-b-xl">
-            <form onSubmit={handleSendMessage} className="flex gap-2">
-              <input
-                type="text"
-                required
-                value={newMessage}
-                onChange={e => setNewMessage(e.target.value)}
-                placeholder="Add a comment..."
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:ring-emerald-500 focus:border-emerald-500 text-sm shadow-sm"
-              />
-              <button
-                type="submit"
-                disabled={sending || !newMessage.trim()}
-                className="px-4 py-2 bg-emerald-600 text-white rounded-full font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center justify-center"
-              >
-                <svg className="w-4 h-4 transform rotate-90" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+        {/* Right Column: Chat (40%) */}
+        <div className="w-full lg:w-[40%]">
+          <section className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-[500px] lg:h-[calc(100vh-8rem)] lg:sticky lg:top-24">
+            <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                 </svg>
-              </button>
-            </form>
-          </div>
+                Comments
+              </h2>
+              <span className="bg-slate-200 text-slate-600 text-xs font-bold px-2 py-0.5 rounded-full">{messages.length}</span>
+            </div>
+            
+            <div className="flex-1 p-6 overflow-y-auto space-y-5 bg-slate-50">
+              {messages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                  <svg className="w-12 h-12 mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                  </svg>
+                  <p className="text-sm font-medium">No comments yet.</p>
+                </div>
+              ) : (
+                messages.map(msg => {
+                  const isMe = msg.user.id === user.id;
+                  const time = new Date(msg.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+                  return (
+                    <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                      <div className={`max-w-[85%] px-4 py-2.5 rounded-2xl shadow-sm ${
+                          isMe 
+                            ? 'bg-primary-500 text-white rounded-tr-sm' 
+                            : 'bg-white border border-gray-100 text-slate-800 rounded-tl-sm'
+                        }`}
+                      >
+                        <p className="text-sm font-medium whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                      </div>
+                      <span className="text-xs font-semibold text-slate-400 mt-1.5 mx-1">
+                        {isMe ? 'You' : msg.user.name} • {time}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+
+            <div className="p-4 border-t border-gray-100 bg-white rounded-b-2xl">
+              <form onSubmit={handleSendMessage} className="flex gap-2">
+                <input
+                  type="text"
+                  required
+                  value={newMessage}
+                  onChange={e => setNewMessage(e.target.value)}
+                  placeholder="Type a message..."
+                  className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm shadow-sm outline-none transition-shadow bg-slate-50 focus:bg-white"
+                />
+                <button
+                  type="submit"
+                  disabled={sending || !newMessage.trim()}
+                  className="w-11 h-11 flex-shrink-0 bg-primary-500 text-white rounded-xl hover:bg-primary-600 transition-colors disabled:opacity-50 flex items-center justify-center shadow-sm"
+                >
+                  <svg className="w-5 h-5 transform rotate-45 -mt-0.5 -ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  </svg>
+                </button>
+              </form>
+            </div>
+          </section>
         </div>
 
-      </main>
+      </div>
     </div>
   );
 };

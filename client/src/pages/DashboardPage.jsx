@@ -18,7 +18,6 @@ const DashboardPage = () => {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      // Fetch overall balances (gives total balance and balance per group)
       const balanceRes = await api.get('/users/me/balances');
       const { totalBalance, perGroup } = balanceRes.data.data;
       
@@ -30,7 +29,6 @@ const DashboardPage = () => {
       });
       setBalancesPerGroup(balancesMap);
 
-      // Fetch groups to get group details (member count, joined date, etc)
       const groupsRes = await api.get('/groups');
       setGroups(groupsRes.data.data.groups);
       
@@ -54,7 +52,7 @@ const DashboardPage = () => {
       await api.post('/groups', { name: newGroupName });
       setNewGroupName('');
       setShowModal(false);
-      fetchDashboardData(); // Refresh list
+      fetchDashboardData(); 
     } catch (err) {
       setModalError(err.response?.data?.error || 'Failed to create group');
     } finally {
@@ -64,178 +62,175 @@ const DashboardPage = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
+      <div className="flex-1 flex items-center justify-center min-h-[80vh]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
       </div>
     );
   }
 
+  // Determine balance state
+  const isOwed = totalBalance > 0.01;
+  const isOwing = totalBalance < -0.01;
+  const isSettled = !isOwed && !isOwing;
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-12">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-emerald-600 rounded-md flex items-center justify-center text-white font-bold text-xl">S</div>
-            <h1 className="text-xl font-bold text-gray-900">Dashboard</h1>
-          </div>
-          <button 
-            onClick={() => {
-              localStorage.removeItem('token');
-              window.location.href = '/login';
-            }}
-            className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
-          >
-            Log out
-          </button>
-        </div>
-      </header>
-
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
-        
-        {/* Total Balance Summary */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-8 text-center sm:text-left sm:flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-1">Total Balance</h2>
-            <div className="flex items-baseline justify-center sm:justify-start gap-2">
-              <span className={`text-4xl font-extrabold ${totalBalance > 0 ? 'text-emerald-600' : totalBalance < 0 ? 'text-orange-600' : 'text-gray-900'}`}>
-                {totalBalance > 0 ? '+' : ''}{totalBalance.toFixed(2)}
-              </span>
-              <span className="text-gray-500 font-medium">INR</span>
-            </div>
-            <p className="mt-2 text-sm text-gray-600">
-              {totalBalance > 0 
-                ? 'You are owed overall.' 
-                : totalBalance < 0 
-                  ? 'You owe money overall.' 
-                  : 'You are all settled up!'}
-            </p>
-          </div>
-          <button
-            onClick={() => setShowModal(true)}
-            className="mt-6 sm:mt-0 inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition-colors"
-          >
-            <svg className="w-5 h-5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-            Create New Group
-          </button>
-        </div>
-
-        {error && (
-          <div className="mb-6 bg-red-50 text-red-700 p-4 rounded-lg text-sm border border-red-100">
-            {error}
-          </div>
-        )}
-
-        {/* Groups Grid */}
-        <div>
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Your Groups</h3>
-          
-          {groups.length === 0 ? (
-            <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
-              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-              <h3 className="mt-2 text-sm font-medium text-gray-900">No groups</h3>
-              <p className="mt-1 text-sm text-gray-500">Get started by creating a new group.</p>
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      
+      {/* Total Balance Summary Card */}
+      <div className={`rounded-2xl shadow-sm p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between border ${
+        isOwed ? 'bg-primary-50 border-primary-100' : 
+        isOwing ? 'bg-red-50 border-red-100' : 
+        'bg-white border-gray-100'
+      }`}>
+        <div className="text-center sm:text-left">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">Overall Balance</h2>
+          {isSettled ? (
+            <div className="flex items-center gap-2 text-slate-800">
+              <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <span className="text-3xl font-extrabold tracking-tight">You are all settled up!</span>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {groups.map((group) => {
-                const bal = balancesPerGroup[group.id] || 0;
-                return (
-                  <Link 
-                    key={group.id} 
-                    to={`/groups/${group.id}`}
-                    className="block bg-white rounded-xl shadow-sm border border-gray-200 hover:border-emerald-300 hover:shadow-md transition-all group overflow-hidden"
-                  >
-                    <div className="p-5">
-                      <div className="flex items-start justify-between">
-                        <h4 className="text-lg font-bold text-gray-900 truncate pr-2 group-hover:text-emerald-700 transition-colors">
-                          {group.name}
-                        </h4>
-                      </div>
-                      <div className="mt-4 flex items-center justify-between">
-                        <span className="text-sm text-gray-500 flex items-center">
-                          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                          </svg>
-                          {group.memberCount} members
-                        </span>
-                        
-                        <div className="text-right">
-                          <span className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-0.5">Your Balance</span>
-                          <span className={`font-bold ${bal > 0 ? 'text-emerald-600' : bal < 0 ? 'text-orange-600' : 'text-gray-600'}`}>
-                            {bal > 0 ? '+' : ''}{bal.toFixed(2)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
+            <div className={`text-4xl sm:text-5xl font-black tracking-tight ${isOwed ? 'text-primary-600' : 'text-danger'}`}>
+              <span className="text-2xl mr-1 font-bold">₹</span>
+              {Math.abs(totalBalance).toFixed(2)}
             </div>
           )}
+          {!isSettled && (
+            <p className={`mt-2 font-medium ${isOwed ? 'text-primary-700' : 'text-red-700'}`}>
+              You {isOwed ? 'are owed' : 'owe'} {Math.abs(totalBalance).toFixed(2)} overall
+            </p>
+          )}
         </div>
-      </main>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 text-red-700 p-4 rounded-xl text-sm border border-red-100 font-medium">
+          {error}
+        </div>
+      )}
+
+      {/* Groups Section */}
+      <div>
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-xl font-bold text-slate-800">Your Groups</h3>
+          {groups.length > 0 && (
+            <button
+              onClick={() => setShowModal(true)}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-semibold rounded-lg text-white bg-primary-500 hover:bg-primary-600 shadow-sm transition-colors"
+            >
+              <svg className="w-5 h-5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              New Group
+            </button>
+          )}
+        </div>
+        
+        {groups.length === 0 ? (
+          <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-gray-200 shadow-sm">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary-50 text-primary-500 mb-4">
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-bold text-slate-800 mb-2">No groups yet</h3>
+            <p className="text-slate-500 mb-6 max-w-sm mx-auto">Create your first group to start splitting expenses with your friends, family, or roommates.</p>
+            <button
+              onClick={() => setShowModal(true)}
+              className="inline-flex items-center px-6 py-3 border border-transparent text-base font-semibold rounded-lg text-white bg-primary-500 hover:bg-primary-600 shadow-sm transition-colors"
+            >
+              Create Group
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+            {groups.map((group) => {
+              const bal = balancesPerGroup[group.id] || 0;
+              const gIsOwed = bal > 0.01;
+              const gIsOwing = bal < -0.01;
+              
+              return (
+                <Link 
+                  key={group.id} 
+                  to={`/groups/${group.id}`}
+                  className="group block bg-white rounded-2xl shadow-sm border border-gray-100 hover:-translate-y-1 hover:shadow-md hover:border-primary-200 transition-all duration-200 overflow-hidden"
+                >
+                  <div className="p-6">
+                    <h4 className="text-xl font-bold text-slate-800 truncate mb-1 group-hover:text-primary-600 transition-colors">
+                      {group.name}
+                    </h4>
+                    <div className="flex items-center text-sm text-slate-500 font-medium mb-6">
+                      <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                      </svg>
+                      {group.memberCount} members
+                    </div>
+                    
+                    <div className="pt-4 border-t border-gray-50 flex justify-between items-end">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Your Balance</span>
+                      <span className={`font-bold text-lg ${gIsOwed ? 'text-primary-600' : gIsOwing ? 'text-danger' : 'text-slate-400'}`}>
+                        {gIsOwed ? '+' : ''}{bal.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Create Group Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            {/* Background overlay */}
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" onClick={() => setShowModal(false)}></div>
-
-            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+          <div className="flex items-center justify-center min-h-screen p-4 text-center sm:p-0">
+            {/* Backdrop blur */}
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" aria-hidden="true" onClick={() => setShowModal(false)}></div>
             
-            <div className="inline-block align-bottom bg-white rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg w-full">
+            <div className="relative inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle w-full max-w-md">
               <form onSubmit={handleCreateGroup}>
-                <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                  <div className="sm:flex sm:items-start">
-                    <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-emerald-100 sm:mx-0 sm:h-10 sm:w-10">
-                      <svg className="h-6 w-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                      </svg>
+                <div className="px-6 pt-6 pb-6">
+                  <h3 className="text-xl font-bold text-slate-900 mb-6" id="modal-title">
+                    Create New Group
+                  </h3>
+                  
+                  {modalError && (
+                    <div className="mb-4 text-sm font-medium text-red-600 bg-red-50 p-3 rounded-lg border border-red-100">
+                      {modalError}
                     </div>
-                    <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-                      <h3 className="text-lg leading-6 font-medium text-gray-900" id="modal-title">
-                        Create New Group
-                      </h3>
-                      <div className="mt-4">
-                        {modalError && (
-                          <div className="mb-3 text-sm text-red-600 bg-red-50 p-2 rounded border border-red-100">
-                            {modalError}
-                          </div>
-                        )}
-                        <label htmlFor="groupName" className="block text-sm font-medium text-gray-700 mb-1">Group Name</label>
-                        <input
-                          type="text"
-                          name="groupName"
-                          id="groupName"
-                          required
-                          value={newGroupName}
-                          onChange={(e) => setNewGroupName(e.target.value)}
-                          className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-emerald-500 focus:border-emerald-500 sm:text-sm"
-                          placeholder="Trip to Goa"
-                          autoFocus
-                        />
-                      </div>
-                    </div>
+                  )}
+                  
+                  <div>
+                    <label htmlFor="groupName" className="block text-sm font-semibold text-slate-700 mb-2">Group Name</label>
+                    <input
+                      type="text"
+                      name="groupName"
+                      id="groupName"
+                      required
+                      value={newGroupName}
+                      onChange={(e) => setNewGroupName(e.target.value)}
+                      className="block w-full px-4 py-3 border border-gray-300 rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-shadow"
+                      placeholder="e.g. Trip to Goa"
+                      autoFocus
+                    />
                   </div>
                 </div>
-                <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <div className="bg-slate-50 px-6 py-4 flex flex-row-reverse gap-3">
                   <button
                     type="submit"
                     disabled={isCreating || !newGroupName.trim()}
-                    className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-emerald-600 text-base font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-70 disabled:cursor-not-allowed"
+                    className="flex-1 sm:flex-none inline-flex justify-center items-center px-6 py-2.5 border border-transparent rounded-lg shadow-sm text-sm font-bold text-white bg-primary-500 hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 transition-colors"
                   >
                     {isCreating ? 'Creating...' : 'Create Group'}
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowModal(false)}
-                    className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                    className="flex-1 sm:flex-none inline-flex justify-center items-center px-6 py-2.5 border border-gray-300 rounded-lg shadow-sm text-sm font-semibold text-slate-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors"
                   >
                     Cancel
                   </button>
