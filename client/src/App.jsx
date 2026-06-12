@@ -8,7 +8,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
 import GroupDetailPage from './pages/GroupDetailPage';
-// import ExpenseDetail from './pages/ExpenseDetail';
+import ExpenseDetailPage from './pages/ExpenseDetailPage';
 
 const PlaceholderPage = ({ title }) => (
   <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
@@ -30,7 +30,7 @@ function App() {
           <Route element={<ProtectedRoute />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/groups/:id" element={<GroupDetailPage />} />
-            <Route path="/expenses/:id" element={<PlaceholderPage title="Expense Detail" />} />
+            <Route path="/expenses/:id" element={<ExpenseDetailPage />} />
           </Route>
 
           {/* Redirect root to dashboard */}

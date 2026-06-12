@@ -5,13 +5,13 @@ const authMiddleware = require('../middleware/authMiddleware');
 
 router.use(authMiddleware);
 
-// These routes are mounted on /api/expenses/:id
-router.get('/', expensesController.getExpenseDetail);
-router.delete('/', expensesController.deleteExpense);
+// These routes handle /api/expenses/:id
+router.get('/:id', expensesController.getExpenseDetail);
+router.delete('/:id', expensesController.deleteExpense);
 
-// Chat Messages (imported from chatController - to be implemented)
+// Chat Messages
 const chatController = require('../controllers/chatController');
-router.get('/messages', chatController.getMessages);
-router.post('/messages', chatController.createMessage);
+router.get('/:id/messages', chatController.getMessages);
+router.post('/:id/messages', chatController.createMessage);
 
 module.exports = router;
