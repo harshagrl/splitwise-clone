@@ -1,335 +1,245 @@
-# AI_CONTEXT.md — Splitwise Clone
+# Splitwise Clone — Complete Architecture & Implementation Context
 
-> **Purpose**: This document is the single source of truth for the entire project.  
-> Another evaluator should be able to paste this file into an AI tool and recreate a similar app.
+This document captures the entire product scope, technical decisions, mathematical models, and API surface for the Splitwise Clone project. It serves as a comprehensive reference to reconstruct the application from scratch.
 
----
+## 1. Product Scope
 
-## Status: 🟢 Interview Complete — Build Plan Ready
+**Core Features Implemented:**
+- User registration and authentication (JWT).
+- Group creation and management.
+- Adding members to a group by email (must be registered users).
+- Adding expenses within a group with four split types: Equal, Exact, Percentage, and Shares.
+- Group-scoped balance dashboard (who owes whom within a group).
+- Overall user dashboard balance (aggregate total across all groups).
+- Settle Up functionality (partial and full settlements).
+- Realtime comment threads on individual expenses (no group-level chat).
+- Deletion of expenses.
 
----
-
-## 1. Product Goals
-- Demonstrate full-stack ability for Spreetail internship evaluation
-- Show ability to: understand a real product, direct an AI agent, build & deploy a working app, document everything reproducibly
-- Evaluators will assess: working deployed app, clean readable code, all minimum features functional, detailed AI_CONTEXT.md reproducibility, ability to explain & modify codebase in technical interview
-
-## 2. Splitwise Research
-- User has manually gone through Splitwise UI and noted core flows
-- No further joint research needed — scope is already clear
-- **Features user actually uses**: creating groups, adding expenses (equal split), seeing who owes whom, settling up
-- **Features user has never touched**: recurring expenses, IOUs outside groups, currency conversion, Pro features, activity export, Venmo/PayPal integrations
-
-## 3. Core Workflows (from user's Splitwise research)
-1. Register / Login
-2. Create group
-3. Invite members to group
-4. Add expense with split type
-5. View group balances
-6. Settle a debt
-
-## 4. User Personas
-_Not separately scoped — the primary persona is a group of friends/roommates splitting shared expenses._
-
-## 5. MVP Scope (Required Features per Evaluators)
-- Authentication (register/login)
-- Groups (create, add members by email of existing users)
-- Expenses with 4 split types: **Equal, Exact, Percentage, Shares**
-- **Realtime expense comments** (WebSocket via Supabase Realtime — per-expense comment threads, not group chat)
-- Balance calculation (who owes whom)
-- Settlements (manual, partial allowed)
-
-## 6. Out-of-Scope Features
-- Recurring expenses
-- IOUs outside of groups
-- Currency conversion
-- Pro/premium features
-- Activity/data export
-- Payment integrations (Venmo, PayPal, etc.)
-
-## 7. Data Model
-- ORM: **Prisma** with Supabase PostgreSQL
-- Relational approach — no JSON columns for split data
-- **All IDs are UUIDs** — `gen_random_uuid()` default via Prisma
-- **Tables**:
-  - `users` (id, name, email, password_hash, created_at)
-  - `groups` (id, name, created_by_id, created_at)
-  - `group_members` (id, group_id, user_id, joined_at)
-  - `expenses` (id, group_id, paid_by_id, description, amount, split_type, created_at)
-  - `expense_splits` (id, expense_id, user_id, amount) — `amount` = what the user **owes** (their share)
-  - `settlements` (id, group_id, paid_by_id, paid_to_id, amount, created_at)
-  - `chat_messages` (id, expense_id, user_id, content, created_at)
-- `split_type` enum: `EQUAL`, `EXACT`, `PERCENTAGE`, `SHARES`
-- Expenses **cannot be edited** after creation — only created or deleted
-- No `updated_at` on expenses
-
-### 7a. Edge Cases & Rules
-- **Deleting an expense**: cascade deletes `expense_splits` automatically; balances recalculate on the fly
-- **Removing a group member with unsettled balances**: allowed; historical expenses/splits are kept intact, member just removed from active list
-- **Group deletion**: not in MVP scope
-- **Rounding**: remainder assigned to the first person in the split list (e.g., ₹100 ÷ 3 = ₹33.34 + ₹33.33 + ₹33.33)
-
-## 8. Authentication
-- **JWT-based, handled manually in Express** — NOT Supabase Auth
-- Register form fields: **name, email, password** only (no avatar)
-- Password hashing: **bcrypt**
-- **Access token only** — no refresh token
-- Token expiry: **7 days**
-- Frontend storage: **localStorage**
-- Protected routes in Express use JWT middleware
-- Frontend: axios instance auto-attaches token from localStorage to every request
-
-## 9. Groups
-- A user can belong to multiple groups
-- A group can have expenses paid by different members
-- **Invite flow**: search/add by email of already-registered users only
-  - No email sending, no invite links, no signup-from-invite
-  - If email not found → show error: "User not found"
-
-## 10. Expenses
-- Any group member can add an expense
-- Payer selection: the person adding can select who paid (self or another group member)
-- Split can include a **subset** of group members (not necessarily everyone)
-- **4 split types**:
-  1. **Equal** — amount divided equally among selected members
-  2. **Exact** — manually enter exact amount for each selected member
-  3. **Percentage** — enter percentage for each selected member (must total 100%)
-  4. **Shares** — enter share units per member, amount divided proportionally
-- **Add expense flow**: description → amount → who paid → split type → select included members → enter split values (if not equal) → submit
-
-### 10a. Expense Comments (Realtime)
-- Each expense has its own comment thread (stored in `chat_messages` table)
-- **Not** a group-level chat
-- WebSocket-based via **Supabase Realtime**
-- Frontend subscribes using **Supabase anon key** with **RLS disabled** on `chat_messages`
-- Filters subscription by `expense_id`
-- Comments are not sensitive (no financial data in chat) — security tradeoff is acceptable
-- **Write path**: authenticated users POST via Express API (auth enforced at API level)
-- **Read path**: Supabase Realtime subscription (read-only, no auth needed)
-- If two users have the same expense open, new comments appear live without refresh
-
-## 11. Settlements
-- **Manual only** — just records that a payment was made, no payment gateway
-- **Partial settlements allowed** — e.g., owe ₹500, can record ₹200 now; balance updates accordingly
-- Settlement is between two specific users within a group
-
-### Settle Up Modal UX
-- Pre-populated from simplified balances
-- Shows list of people the logged-in user owes in this group
-- Each row: "You owe [Name] ₹[amount]" with a **Settle** button
-- Clicking Settle opens input **pre-filled with the full owed amount**
-- User can reduce for partial settlement, then confirm
-- After confirming: close modal, refresh group balances
-- If user is owed money (not owing): show "You are owed money in this group. No settlements needed."
-
-## 12. Balance Calculation
-- **Computed on the fly** at query time — no stored pairwise debt rows
-- Source data: `expense_splits` + `settlements` tables
-- Formula: `net_balance = Σ(what I paid in expenses) − Σ(my share in expense_splits) + Σ(settlements I received) − Σ(settlements I paid)`
-- **Debt simplification enabled** — minimize number of transactions needed
-- **Two views**:
-  1. **Group-scoped**: who owes whom within a specific group
-  2. **Overall dashboard**: total net balance across all groups (e.g., "You owe ₹300 overall")
-
-## 13. UI Screens
-
-| Route | Screen | Auth | Notes |
-|-------|--------|------|-------|
-| `/login` | Login page | Public | |
-| `/register` | Register page | Public | |
-| `/dashboard` | Dashboard | Protected | Overall balance + group list |
-| `/groups/:id` | Group Detail | Protected | Expenses, members, balances |
-| `/expenses/:id` | Expense Detail | Protected | Expense info + realtime comments |
-
-- **Add Expense** → Modal on Group Detail page (not a separate route)
-- **Settle Up** → Modal on Group Detail page (not a separate route)
-
-### Dashboard Layout
-- Overall balance summary at top ("You are owed ₹X" or "You owe ₹X")
-- List of all groups user belongs to
-- Each group card: group name + user's net balance in that group
-- "Create New Group" button
-- No activity feed
-
-### Group Detail Layout
-- Group name + created-by info
-- Member list with add-by-email and remove-member options
-- Expense list (description, amount, who paid, date) — each clickable → `/expenses/:id`
-- Group balance summary (who owes whom, simplified)
-- "Add Expense" button → opens modal
-- "Settle Up" button → opens modal
-
-## 14. Routing
-- **react-router-dom** (client-side)
-- Public routes: `/login`, `/register`
-- Protected routes: `/dashboard`, `/groups/:id`, `/expenses/:id`
-- Protected route wrapper component checks JWT in localStorage; redirects to `/login` if missing/expired
-
-## 15. Frontend Architecture
-- **React + Vite** (SPA)
-- **react-router-dom** for client-side routing
-- **State management**: React Context + useReducer for **auth state only**; all other data fetched directly with axios (no global store)
-- **CSS**: Tailwind CSS **v3** (class-based config, not v4)
-- **HTTP client**: axios with a configured instance that auto-attaches JWT from localStorage
-- **Supabase JS client** used on frontend for Realtime comment subscriptions only
-
-## 16. Backend Architecture
-- **Node.js + Express**
-- **Prisma ORM** → Supabase PostgreSQL
-- JWT auth middleware (bcrypt + jsonwebtoken)
-- **Validation**: zod for request validation
-- Supabase JS client: **not used on backend** — Realtime is frontend-only
-- **Error handling**: centralized middleware in `middleware/errorHandler.js`
-  - All routes use try/catch + `next(error)`
-  - Error response: `{ error: "message" }`
-  - Success response: `{ data: ... }`
-
-### Backend Folder Structure
-```
-server/
-  index.js
-  routes/
-    auth.js
-    groups.js
-    expenses.js
-    settlements.js
-    chat.js
-  controllers/
-    authController.js
-    groupsController.js
-    expensesController.js
-    settlementsController.js
-    chatController.js
-  middleware/
-    authMiddleware.js
-    errorHandler.js
-  utils/
-    balanceCalc.js
-    splitCalculator.js
-  prisma/
-    schema.prisma
-```
-- **Route + Controller pattern only** — no service layer
-
-## 17. Database Choice
-- **PostgreSQL** hosted on **Supabase free tier**
-- Accessed via **Prisma ORM** from Express backend
-- Supabase Realtime used for live comment subscriptions (frontend connects directly)
-
-## 18. API Design
-- **RESTful** routes, all prefixed with `/api`
-- Dedicated balance endpoint (not embedded in group detail)
-
-### Auth
-| Method | Route | Description |
-|--------|-------|-------------|
-| POST | `/api/auth/register` | Register new user |
-| POST | `/api/auth/login` | Login, returns JWT |
-
-### Groups
-| Method | Route | Description |
-|--------|-------|-------------|
-| GET | `/api/groups` | List user's groups |
-| POST | `/api/groups` | Create new group |
-| GET | `/api/groups/:id` | Get group detail |
-| POST | `/api/groups/:id/members` | Add member by email |
-| DELETE | `/api/groups/:id/members/:userId` | Remove member |
-
-### Expenses
-| Method | Route | Description |
-|--------|-------|-------------|
-| GET | `/api/groups/:id/expenses` | List group expenses |
-| POST | `/api/groups/:id/expenses` | Create expense with splits |
-| GET | `/api/expenses/:id` | Get expense detail |
-| DELETE | `/api/expenses/:id` | Delete expense |
-
-### Comments (Expense Messages)
-| Method | Route | Description |
-|--------|-------|-------------|
-| GET | `/api/expenses/:id/messages` | Get expense comments |
-| POST | `/api/expenses/:id/messages` | Post a comment |
-
-### Balances & Settlements
-| Method | Route | Description |
-|--------|-------|-------------|
-| GET | `/api/groups/:id/balances` | Group balances (simplified) |
-| GET | `/api/groups/:id/settlements` | List group settlements |
-| POST | `/api/groups/:id/settlements` | Record a settlement |
-| GET | `/api/users/me/balances` | Overall balance across all groups |
-
-## 19. Deployment
-- **Monorepo locally**, separate deploys:
-  - Frontend (React/Vite) → **Vercel** free tier
-  - Backend (Express) → **Render.com** free tier
-  - Database (PostgreSQL) → **Supabase** free tier
-
-### Top-Level Folder Structure
-```
-splitwise-clone/
-├── client/          ← React + Vite frontend
-├── server/          ← Node + Express backend
-├── AI_CONTEXT.md
-├── BUILD_PLAN.md
-└── README.md
-```
-
-### Environment Variables
-**Server `.env`**:
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | Supabase PostgreSQL connection string (Transaction mode, port 6543) |
-| `DIRECT_URL` | Supabase PostgreSQL direct connection string (Session mode, port 5432) |
-| `JWT_SECRET` | Random secret for signing JWT tokens |
-| `PORT` | 5000 locally; Render sets automatically |
-| `CLIENT_URL` | Vercel frontend URL (for CORS) |
-
-**Client `.env`**:
-| Variable | Description |
-|----------|-------------|
-| `VITE_API_URL` | Express backend URL (Render in prod, localhost:5000 in dev) |
-| `VITE_SUPABASE_URL` | Supabase project URL |
-| `VITE_SUPABASE_ANON_KEY` | Supabase anon/public key |
-
-### CORS Configuration
-- Production: allow `CLIENT_URL` only (no wildcard `*`)
-- Development: allow `localhost:5173`
-- Use `CLIENT_URL` env var to handle both environments
-
-### Render.com Commands
-- **Build command**: `npm install && npx prisma generate`
-- **Start command**: `node index.js`
-- `prisma db push` run **manually once from local** after setting `DATABASE_URL` — never on Render
-
-## 20. Testing
-- **No automated tests** — manual testing only via the frontend UI
-- Acceptable tradeoff given 16-hour timeline
-- Known limitation documented here
-
-## 21. Known Risks
-- Render.com free tier has cold starts (~30s spin-up after inactivity)
-- No refresh token — if JWT expires, user must re-login
-- No RLS on `chat_messages` — anyone with the anon key could theoretically subscribe to any expense's comments
-- No automated tests — regressions caught only through manual testing
-- Debt simplification algorithm complexity — must be correct or balances will be wrong
-- 16-hour timeline is tight for all features
-
-## 22. Tradeoffs
-| Decision | Tradeoff |
-|----------|----------|
-| No Supabase Auth | Simpler stack, but must implement auth manually |
-| No refresh token | Simpler, but 7-day hard expiry |
-| No RLS on chat | Simpler realtime, but less secure reads |
-| No service layer | Faster development, but controllers may get large |
-| No automated tests | More build time, but no regression safety net |
-| Compute balances on the fly | No stale data, but slower queries at scale |
-| No group deletion | Avoids cascade complexity, but groups persist forever |
-| No expense editing | Simpler balance logic, but users must delete+recreate |
+**Explicitly Excluded Features:**
+- Email verification / invite links / signup-from-invite flows.
+- Recurring expenses.
+- IOUs outside of groups.
+- Currency conversion.
+- Pro features / receipt scanning.
+- Activity feed / push notifications.
+- Payment gateway integrations.
 
 ---
 
-## Changelog
-| Date | Change |
-|------|--------|
-| 2026-06-12 | Created AI_CONTEXT.md; began discovery interview |
-| 2026-06-12 | Completed Rounds 1–5: all architecture, data model, edge cases, and tradeoffs documented |
-| 2026-06-12 | Completed Round 6: Tailwind v3, env vars, CORS, deployment commands, settle up UX — interview complete |
+## 2. Technical Stack & Deployment Strategy
+
+- **Backend**: Node.js + Express
+- **Database**: PostgreSQL (hosted on Supabase)
+- **ORM**: Prisma Client v7 (using `@prisma/adapter-pg` with `pg` for connection pooling compatibility)
+- **Realtime**: Supabase Realtime (JS SDK listening directly to `chat_messages` table mutations)
+- **Frontend**: React + Vite + React Router + Tailwind CSS v3
+- **Authentication**: Custom JWT (No Supabase Auth used to minimize architectural complexity)
+- **Deployment Strategy**: 
+  - Backend: Render.com (Free Tier)
+  - Frontend: Vercel (Free Tier)
+  - Database: Supabase (Free Tier)
+
+---
+
+## 3. Prisma Schema
+
+```prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SplitType {
+  EQUAL
+  EXACT
+  PERCENTAGE
+  SHARES
+}
+
+model User {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String
+  email         String         @unique
+  password_hash String
+  created_at    DateTime       @default(now())
+
+  groups_created       Group[]
+  group_memberships    GroupMember[]
+  expenses_paid        Expense[]      @relation("PaidBy")
+  expense_splits       ExpenseSplit[]
+  settlements_paid     Settlement[]   @relation("SettlementPaidBy")
+  settlements_received Settlement[]   @relation("SettlementPaidTo")
+  chat_messages        ChatMessage[]
+  @@map("users")
+}
+
+model Group {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String
+  created_by_id String         @db.Uuid
+  created_at    DateTime       @default(now())
+
+  created_by  User           @relation(fields: [created_by_id], references: [id])
+  members     GroupMember[]
+  expenses    Expense[]
+  settlements Settlement[]
+  @@map("groups")
+}
+
+model GroupMember {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  group_id  String   @db.Uuid
+  user_id   String   @db.Uuid
+  joined_at DateTime @default(now())
+
+  group Group @relation(fields: [group_id], references: [id])
+  user  User  @relation(fields: [user_id], references: [id])
+  @@unique([group_id, user_id])
+  @@map("group_members")
+}
+
+model Expense {
+  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  group_id    String         @db.Uuid
+  paid_by_id  String         @db.Uuid
+  description String
+  amount      Decimal        @db.Decimal(12, 2)
+  split_type  SplitType
+  created_at  DateTime       @default(now())
+
+  group    Group           @relation(fields: [group_id], references: [id])
+  paid_by  User            @relation("PaidBy", fields: [paid_by_id], references: [id])
+  splits   ExpenseSplit[]
+  messages ChatMessage[]
+  @@map("expenses")
+}
+
+model ExpenseSplit {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  expense_id String   @db.Uuid
+  user_id    String   @db.Uuid
+  amount     Decimal  @db.Decimal(12, 2)
+
+  expense Expense @relation(fields: [expense_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id])
+  @@map("expense_splits")
+}
+
+model Settlement {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  group_id   String   @db.Uuid
+  paid_by_id String   @db.Uuid
+  paid_to_id String   @db.Uuid
+  amount     Decimal  @db.Decimal(12, 2)
+  created_at DateTime @default(now())
+
+  group   Group @relation(fields: [group_id], references: [id])
+  paid_by User  @relation("SettlementPaidBy", fields: [paid_by_id], references: [id])
+  paid_to User  @relation("SettlementPaidTo", fields: [paid_to_id], references: [id])
+  @@map("settlements")
+}
+
+model ChatMessage {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  expense_id String   @db.Uuid
+  user_id    String   @db.Uuid
+  content    String
+  created_at DateTime @default(now())
+
+  expense Expense @relation(fields: [expense_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id])
+  @@map("chat_messages")
+}
+```
+
+---
+
+## 4. API Routes
+
+### Auth (`/api/auth`)
+- `POST /register`: Registers user. Body: `{ name, email, password }`. Res: `{ token, user }`.
+- `POST /login`: Authenticates user. Body: `{ email, password }`. Res: `{ token, user }`.
+- `GET /me`: Fetches current user. Auth: JWT. Res: `{ user }`.
+
+### Users (`/api/users`)
+- `GET /me/balances`: Fetches overall total balance across all groups. Auth: JWT. Res: `{ totalBalance, perGroup: [...] }`.
+
+### Groups (`/api/groups`)
+- `POST /`: Creates group. Auth: JWT. Body: `{ name }`. Res: `{ group }`.
+- `GET /`: Lists all groups for user. Auth: JWT. Res: `{ groups }`.
+- `GET /:id`: Details and members. Auth: JWT. Res: `{ group }`.
+- `POST /:id/members`: Add user by email. Auth: JWT. Body: `{ email }`. Res: `{ member }`.
+- `DELETE /:id/members/:userId`: Removes user. Auth: JWT. Res: `{ success: true }`.
+
+### Group Expenses & Balances (`/api/groups/:id`)
+- `GET /expenses`: Lists expenses. Auth: JWT. Res: `{ expenses }`.
+- `POST /expenses`: Create expense. Auth: JWT. Body: `{ description, amount, paid_by_id, split_type, selected_members, split_values }`. Res: `{ expense }`.
+- `GET /balances`: Returns mathematical balances and simplified debts. Auth: JWT. Res: `{ balances, simplifiedDebts }`.
+
+### Group Settlements (`/api/groups/:id/settlements`)
+- `GET /`: List settlements. Auth: JWT. Res: `{ settlements }`.
+- `POST /`: Record settlement. Auth: JWT. Body: `{ paid_to_id, amount }`. Res: `{ settlement }`.
+
+### Expenses & Chat (`/api/expenses/:id`)
+- `GET /`: Expense detail and splits. Auth: JWT. Res: `{ expense }`.
+- `DELETE /`: Deletes expense and cascades splits/chat. Auth: JWT. Res: `{ success: true }`.
+- `GET /messages`: List chat messages. Auth: JWT. Res: `{ messages }`.
+- `POST /messages`: Create chat message. Auth: JWT. Body: `{ content }`. Res: `{ message }`.
+
+---
+
+## 5. Mathematical Models
+
+### 5.1 Split Logic Algorithm
+The `splitCalculator` takes a total expense amount and divides it among participants based on the `split_type`.
+1. **EQUAL**: `baseAmount = floor(total * 100 / count) / 100`. Remainder (`total - baseAmount * count`) is mapped out by sequentially adding `0.01` to the first `N` participants until exhausted. This guarantees the sum of splits exactly equals the original amount.
+2. **EXACT**: Verifies that the sum of the provided values strictly equals the total amount. Assigns exact values to users.
+3. **PERCENTAGE**: `amount = Math.round(total * percentage / 100)`. Remainder is distributed systematically (just like EQUAL) to ensure the final total is mathematically perfect.
+4. **SHARES**: `totalShares = sum(shares)`. Each participant gets `amount = Math.round(total * share / totalShares)`. Remainder is distributed to ensure mathematical perfection.
+
+### 5.2 Balance Calculation
+Balances are calculated *at query time* dynamically from three raw tables: `Expense`, `ExpenseSplit`, and `Settlement`.
+- **+ (Positive)**: Credits (User paid an expense, User received a settlement).
+- **- (Negative)**: Debits (User owes a split share, User paid a settlement).
+- **Net Balance**: The sum of all credits and debits per user.
+
+### 5.3 Debt Simplification (Greedy Algorithm)
+1. Split balances into `debtors` (negative balance) and `creditors` (positive balance).
+2. Sort both lists descending by absolute amount.
+3. Match the largest debtor with the largest creditor.
+4. Record a simplified debt (`debtor owes creditor Math.min(debtor_amount, creditor_amount)`).
+5. Reduce both balances by that amount. If a balance reaches zero, move to the next person.
+6. Repeat until all balances are zero. This perfectly minimizes the total number of transactions.
+
+---
+
+## 6. Frontend Architecture
+
+### State Management
+- `AuthContext`: Context API for token storage (`localStorage`), `login`, `register`, `logout`, and initial profile fetch.
+- `Axios`: Intercepts every request to inject the `Bearer ${token}` and listens for 401 Unauthorized responses to dispatch a logout event.
+
+### Routing & Pages
+1. `App.jsx`: Uses `react-router-dom`. Configures `<ProtectedRoute>` wrapper.
+2. `LoginPage.jsx`: Email/password form.
+3. `RegisterPage.jsx`: Name/email/password form.
+4. `DashboardPage.jsx`: Shows total user balance, individual group cards, and Create Group modal.
+5. `GroupDetailPage.jsx`: Shows members, expenses feed, simplified debt list, Add Expense modal, and Settle Up modal.
+6. `ExpenseDetailPage.jsx`: Expense detail, exact breakdown of splits, deletion capability, and Realtime Chat component.
+
+### Supabase Realtime Setup
+- **Why**: Used strictly for the realtime comment feed on individual expenses.
+- **Security**: PostgreSQL RLS is disabled on `chat_messages`. The frontend subscribes using the Supabase `anon` key. Since no financial data is exposed in the chat, this avoids complex custom JWT integration with Supabase. Write-access is strictly controlled by Express.
+- **Flow**: User sends message -> Express validates auth & saves to DB -> Supabase triggers `postgres_changes` event -> React optimistically appends and syncs incoming messages from others.
+
+---
+
+## 7. Known Limitations & Tradeoffs
+
+1. **Disconnected Settlements**: If an expense is deleted, any settlements previously made to pay for that expense are *not* automatically deleted. This leaves mathematically correct but confusing "reverse-debts". Settlements must be manually balanced by creating reverse settlements, as the UI does not currently allow deleting them.
+2. **No Offline Support**: The PWA/offline caching layer is not implemented.
+3. **Email Invites**: Because automated email systems were excluded from scope, users must manually register before their friends can add them to a group by their exact email.
+4. **Supabase Client vs. ORM**: Prisma handles all backend database mutations via the `pg` transaction pooler. The `@supabase/supabase-js` client is deliberately imported *only* in the frontend solely for WebSocket subscriptions.
