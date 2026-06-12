@@ -7,7 +7,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
-// import GroupDetail from './pages/GroupDetail';
+import GroupDetailPage from './pages/GroupDetailPage';
 // import ExpenseDetail from './pages/ExpenseDetail';
 
 const PlaceholderPage = ({ title }) => (
@@ -29,7 +29,7 @@ function App() {
           {/* Protected Routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/groups/:id" element={<PlaceholderPage title="Group Detail" />} />
+            <Route path="/groups/:id" element={<GroupDetailPage />} />
             <Route path="/expenses/:id" element={<PlaceholderPage title="Expense Detail" />} />
           </Route>
 
