@@ -6,7 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 // Pages (will be created in upcoming steps)
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
-// import Dashboard from './pages/Dashboard';
+import DashboardPage from './pages/DashboardPage';
 // import GroupDetail from './pages/GroupDetail';
 // import ExpenseDetail from './pages/ExpenseDetail';
 
@@ -28,7 +28,7 @@ function App() {
 
           {/* Protected Routes */}
           <Route element={<ProtectedRoute />}>
-            <Route path="/dashboard" element={<PlaceholderPage title="Dashboard" />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/groups/:id" element={<PlaceholderPage title="Group Detail" />} />
             <Route path="/expenses/:id" element={<PlaceholderPage title="Expense Detail" />} />
           </Route>
